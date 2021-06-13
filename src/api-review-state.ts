@@ -56,6 +56,7 @@ export async function addOrUpdateAPIReviewCheck(
       repo: pr.head.repo.name,
       name: API_REVIEW_CHECK_NAME,
       status: 'completed',
+      title: 'PR no longer requires API Review',
       check_run_id: checkRun.id,
       conclusion: CheckRunStatus.NEUTRAL,
     });
@@ -340,7 +341,9 @@ export function setupAPIReviewStateManagement(probot: Probot) {
     }
 
     const isSemverMajorMinor = [SEMVER_LABELS.MINOR, SEMVER_LABELS.MAJOR].includes(label.name);
-    const shouldExclude = pr.labels.some(l => EXCLUDE_LABELS.includes(l.name));
+    const shouldExclude =
+      pr.labels.some(l => EXCLUDE_LABELS.includes(l.name)) ||
+      pr.base.ref !== pr.base.repo.default_branch;
 
     // If a PR is semver-minor or semver-major and the PR does not have an
     // exclusion label, automatically add the 'api-review/requested 🗳' label.
@@ -370,6 +373,14 @@ export function setupAPIReviewStateManagement(probot: Probot) {
         });
         return;
       }
+    } else if (shouldExclude) {
+      // Remove the api-review/requested label if it was added prior to an exclusion label -
+      // for example if the backport label was added by trop after cation got to it.
+      await removeLabel(context.octokit, {
+        ...context.repo({}),
+        prNumber: pr.number,
+        name: REVIEW_LABELS.REQUESTED,
+      });
     }
 
     await addOrUpdateAPIReviewCheck(context.octokit, pr);
